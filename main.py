@@ -20,10 +20,10 @@ class BTreeNode:
     #Constructor
     def __init__(self, block_id, is_root=False): 
         self.block_id = block_id
-        self.parent.id = 0
+        self.parent_id = 0  
         self.is_root = is_root
         self.num_keys = 0
-        self.num_keys = [0] * MAX_KEYS 
+        self.keys = [0] * MAX_KEYS 
         self.values = [0] * MAX_KEYS
         self.children = [0] * MAX_CHILDREN
     #Converts the node to bytes
@@ -79,12 +79,12 @@ class BTreeHeader:
 #B-TREE CLASS
 class BTree: 
     #Constructor
-    def __init__(self, file_name): 
-        self.file_name = file_name #File name
-        self.header = None #BTreeHeader
-        self.file = None #File object
-        self.cache = OrderedDict() #LRU Cache to hold a maximum of 3 nodes
-        self.cache_limit = 3 #Cache limit: maxiumum number of nodes in memory 
+    def __init__(self, file_name):
+        self.file_name = file_name
+        self.header = BTreeHeader()  # Initialize the header
+        self.file = None
+        self.cache = OrderedDict()  # Cache for nodes
+        self.cache_limit = 3  # Limit the cache size 
     
     #FILE REALTED FUNCTIONS
     #Opens the file
@@ -99,13 +99,13 @@ class BTree:
             raise ValueError(f"file '{self.file_name}' has an invalid format.")
     #Creates a new file
     def create_file(self):
-        if os.path.exists(self.file_name): #Check if the file exists
-            overwrite = input(f"file '{self.file_name}' exists. overwrite it? (yes or no): ").strip().lower() #Ask the user if they want to overwrite the file
-            if overwrite != 'yes': #Return if the user does not want to overwrite the file
+        if os.path.exists(self.file_name):  # Check if the file already exists
+            overwrite = input(f"File '{self.file_name}' exists. Overwrite? (yes/no): ").strip().lower()
+            if overwrite != 'yes':
                 return
-        self.file = open(self.file_name, 'wb+') #Open the file in write mode
-        self.file.write(self.header.to_bytes()) #Write the header to the file
-        print(f"created new file '{self.file_name}'.") 
+        self.file = open(self.file_name, 'wb+')  # Open the file in write mode
+        self.file.write(self.header.to_bytes())  # Write the header to the file
+        print(f"Created new file '{self.file_name}'.")
     #Closes the file
     def close_file(self):
         if self.file: #Check if the file is open
@@ -173,7 +173,7 @@ class BTree:
         if not self.is_file_open(): #Check if the file is open
             print("No file is open. Use 'CREATE' or 'OPEN' first.")
             return
-        if self.search(key) is not None: #Check if the key already exists in the B-Tree
+        if self.search(key, show_error=False) is not None: #Check if the key already exists in the B-Tree
             print(f"Key {key} already exists. Duplicate keys are not allowed.")
             return
         # Insert key-value pair
@@ -242,25 +242,37 @@ class BTree:
         self.save_node(child)
         self.save_node(new_node)
     
-    #SEARCH COMMAND
-    #Search for a key in the B-Tree
-    def search(self, key): 
-        if not self.is_file_open(): #Check if the file is open
-            print("No file is open. Use 'CREATE' or 'OPEN' first.")
+    # SEARCH COMMAND
+    # Search for a key in the B-Tree
+    def search(self, key, show_error=True): 
+        if not self.is_file_open():  # Check if the file is open
+            if show_error:
+                print("No file is open. Use 'CREATE' or 'OPEN' first.")
             return None
-        if self.header.root_id == 0: #Check if the B-Tree is empty
+        if self.header.root_id == 0:  # Check if the B-Tree is empty
+            if show_error:
+                print("The B-Tree is empty.")
             return None
-        return self._search_recursive(self.load_node(self.header.root_id), key) # Recursively search for the key
-    #Recursive search function
+        value = self._search_recursive(self.load_node(self.header.root_id), key)  # Recursively search for the key
+        if value is not None:
+            if show_error:
+                print(f"Key: {key}, Value: {value}")  # Print the key-value pair if found
+        else:
+            if show_error:
+                print(f"Error: Key {key} not found.")  # Print an error message if the key is not found
+        return value
+
+    # Recursive search function
     def _search_recursive(self, node, key):
         i = 0
-        while i < node.num_keys and key > node.keys[i]: # Find the correct key position
+        while i < node.num_keys and key > node.keys[i]:  # Find the correct key position
             i += 1
-        if i < node.num_keys and key == node.keys[i]: # Check if the key is found
+        if i < node.num_keys and key == node.keys[i]:  # Check if the key is found
             return node.values[i]
-        if node.children[0] == 0:# Check if the node is a leaf node
+        if node.children[0] == 0:  # Check if the node is a leaf node
             return None
-        return self._search_recursive(self.load_node(node.children[i]), key) # Recursively search for the key
+        return self._search_recursive(self.load_node(node.children[i]), key)  # Recursively search for the key
+
     
     #PRINT COMMAND
     def print_tree(self): #Print the key-value pairs in the B-Tree
@@ -312,7 +324,7 @@ class BTree:
             with open(input_file, 'r') as f: #Open the input file in read mode
                 for line in f: #Read each line in the file
                     key, value = map(int, line.strip().split(',')) #Split the line by comma and convert the values to integers
-                    if self.search(key) is not None:  #Check if the key already exists in the B-Tree to avoid duplicates
+                    if self.search(key, show_error=False) is not None:  #Check if the key already exists in the B-Tree to avoid duplicates
                         print(f"Skipping duplicate key: {key}")
                         continue #Skip the key if it already exists
                     self.insert(key, value) #Insert the key-value pair into the B-Tree
@@ -353,7 +365,7 @@ def main():
             #Search Command
             elif command == 'search':
                 key = int(input("Enter key: ")) #Get the key from the user
-                btree.search(key) #Search for the key in the B-Tree
+                btree.search(key, show_error=True) #Search for the key in the B-Tree
             #Print Command
             elif command == 'print':
                 btree.print_tree() #Print the key-value pairs in the B-Tree
